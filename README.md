@@ -23,48 +23,67 @@ A real-time group chat application built for travelers to communicate and coordi
 
 ## System Design
 
-```mermaid
-flowchart TD
-    subgraph CLIENT["CLIENT — React 19 · TypeScript · Zustand · TanStack Query · STOMP/SockJS"]
-        Auth[Auth feature]
-        Groups[Groups feature]
-        Chat[Chat feature]
-        Presence[Presence feature]
-        Axios[Axios — JWT interceptor]
-        STOMP[STOMP Client — WebSocket]
-        Auth & Groups --> Axios
-        Chat & Presence --> STOMP
-    end
-
-    Axios -->|HTTPS REST| REST
-    STOMP -->|WSS WebSocket| WS
-
-    subgraph BACKEND["BACKEND — Spring Boot 3 · Java 21"]
-        REST["REST API\n/api/v1/**"]
-        WS["WebSocket/STOMP\n/ws endpoint"]
-        KC["Kafka Consumer\nchat.messages"]
-        SVC["Service Layer\nAOP timed · < 20ms"]
-        REST & WS & KC --> SVC
-    end
-
-    SVC --> PG[("PostgreSQL\nRDS")]
-    SVC --> RD[("Redis\nElastiCache")]
-    SVC -->|publish| KF[("Kafka\nMSK Serverless")]
-    KF -->|consume| KC
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                            CLIENT                                   │
+│                                                                     │
+│   React 19 + TypeScript + Zustand + TanStack Query + STOMP/SockJS  │
+│                                                                     │
+│   ┌──────────┐   ┌──────────┐   ┌──────────┐   ┌───────────────┐  │
+│   │   Auth   │   │  Groups  │   │   Chat   │   │   Presence    │  │
+│   │  feature │   │  feature │   │  feature │   │   feature     │  │
+│   └──────────┘   └──────────┘   └──────────┘   └───────────────┘  │
+│         │               │              │                │           │
+│    Axios (JWT interceptor)         STOMP Client (WebSocket)         │
+└──────────────────────────┬───────────────────────┬─────────────────┘
+                           │ HTTPS REST            │ WSS WebSocket
+                           ▼                       ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                        BACKEND (Spring Boot 3 / Java 21)           │
+│                                                                     │
+│  ┌────────────────┐  ┌──────────────────┐  ┌──────────────────┐   │
+│  │  REST API      │  │  WebSocket/STOMP │  │  Kafka Consumer  │   │
+│  │  /api/v1/**    │  │  /ws endpoint    │  │  chat.messages   │   │
+│  └───────┬────────┘  └────────┬─────────┘  └────────┬─────────┘   │
+│          │                   │                       │             │
+│          └───────────────────▼───────────────────────┘             │
+│                              │                                      │
+│                    ┌─────────▼──────────┐                          │
+│                    │   Service Layer     │                          │
+│                    │  (AOP timed, <20ms) │                          │
+│                    └─────────┬──────────┘                          │
+│              ┌───────────────┼───────────────┐                     │
+│              ▼               ▼               ▼                     │
+│        ┌──────────┐   ┌──────────┐   ┌──────────────┐             │
+│        │PostgreSQL│   │  Redis   │   │    Kafka     │             │
+│        │  (RDS)   │   │(ElastiC.)│   │(MSK Serverls)│             │
+│        └──────────┘   └──────────┘   └──────────────┘             │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Message Flow
 
-```mermaid
-flowchart TD
-    A([User sends message]) --> B[STOMP /app/groups/id/messages]
-    B --> C[MessageController → MessageService]
-    C --> D[(Write Message + Outbox\nsame DB transaction)]
-    D --> E[OutboxPublisher → Kafka\nchat.messages · 3 partitions]
-    E --> F[ChatMessageConsumer]
-    F --> G[(Cache in Redis\nsub-ms reads)]
-    F --> H[Broadcast via STOMP\n/topic/groups/id/messages]
-    H --> I([All group members\nreceive in real time])
+```
+User sends message
+       │
+       ▼
+  STOMP /app/groups/{id}/messages
+       │
+       ▼
+  MessageController → MessageService
+       │
+       ├──► Write Message + Outbox (same DB transaction)
+       │
+       ▼
+  OutboxPublisher → Kafka (chat.messages topic, 3 partitions)
+       │
+       ▼
+  ChatMessageConsumer
+       ├──► Cache message in Redis (sub-ms reads)
+       └──► Broadcast via STOMP /topic/groups/{id}/messages
+                  │
+                  ▼
+          All group members receive message in real time
 ```
 
 ### Latency Targets
@@ -111,74 +130,61 @@ flowchart TD
 
 ## AWS Architecture
 
-```mermaid
-flowchart TD
-    User([User]) --> CF
-
-    subgraph AWS["AWS — us-east-1"]
-        subgraph Edge["Edge / CDN"]
-            CF["CloudFront\nd2c6hrvg5t8xkc.cloudfront.net"]
-        end
-
-        subgraph FE["Frontend"]
-            S3["S3\ntripchat-frontend-010741811423\nReact build · OAC"]
-        end
-
-        subgraph App["Application Layer"]
-            ALB["ALB\nLayer 7 · sticky sessions 1-day"]
-            ECS["ECS Fargate\nSpring Boot 3\n0.5 vCPU · 1 GB RAM\n/actuator/health"]
-        end
-
-        subgraph Data["Data Layer"]
-            RDS["RDS PostgreSQL 16\ndb.t3.micro · Single-AZ\nHikariCP max 20"]
-            EC["ElastiCache Redis 7\nPresence · Cache · Typing · Unread"]
-            MSK["MSK Serverless\nchat.messages · 3 partitions"]
-        end
-
-        subgraph Ops["DevOps & Security"]
-            ECR["ECR\nDocker registry\n:sha + :latest tags"]
-            SM["Secrets Manager\nJWT_SECRET · DB_PASSWORD"]
-            CW["CloudWatch\nLogs · Metrics"]
-            IAM["IAM Role\ntripchat-github-deploy\nGitHub OIDC"]
-        end
-    end
-
-    subgraph CICD["GitHub Actions (CI/CD)"]
-        GHA["Deploy workflows\nOIDC — no stored AWS keys"]
-    end
-
-    CF -->|"OAC — static assets"| S3
-    CF -->|"HTTPS REST · WSS WebSocket"| ALB
-    ALB --> ECS
-    ECS --> RDS
-    ECS --> EC
-    ECS -->|publish| MSK
-    MSK -->|consume| ECS
-    ECS -->|pull image| ECR
-    SM -->|inject secrets| ECS
-    ECS -->|logs & metrics| CW
-    GHA -->|AssumeRoleWithWebIdentity| IAM
-    IAM -->|push image| ECR
-    IAM -->|force-new-deployment| ECS
-    IAM -->|s3 sync + delete| S3
-    IAM -->|invalidate cache| CF
+```
+                        ┌─────────────────┐
+                        │   Route 53 DNS  │
+                        └────────┬────────┘
+                                 │
+               ┌─────────────────┴─────────────────┐
+               │                                   │
+               ▼                                   ▼
+   ┌───────────────────────┐          ┌────────────────────────┐
+   │      CloudFront        │          │    Application Load     │
+   │  (d2c6hrvg5t8xkc.     │          │    Balancer (ALB)       │
+   │   cloudfront.net)      │          │  sticky sessions 1-day  │
+   └───────────┬────────────┘          └────────────┬───────────┘
+               │                                    │
+               ▼                                    ▼
+   ┌───────────────────────┐          ┌─────────────────────────┐
+   │   S3 Bucket           │          │   ECS Fargate           │
+   │  (React build, OAC)   │          │   Spring Boot container  │
+   │  tripchat-frontend-   │          │   0.5 vCPU / 1GB RAM    │
+   │  010741811423         │          │   /actuator/health      │
+   └───────────────────────┘          └──────┬──────────────────┘
+                                             │
+                      ┌──────────────────────┼───────────────────┐
+                      │                      │                   │
+                      ▼                      ▼                   ▼
+          ┌──────────────────┐  ┌──────────────────┐  ┌─────────────────┐
+          │  RDS PostgreSQL  │  │  ElastiCache     │  │  MSK Serverless │
+          │  db.t3.micro     │  │  Redis 7         │  │  Kafka          │
+          │  Single-AZ       │  │  Presence, Cache │  │  chat.messages  │
+          │  HikariCP max 20 │  │  Typing, Unread  │  │  3 partitions   │
+          └──────────────────┘  └──────────────────┘  └─────────────────┘
+                      │
+                      ▼
+          ┌──────────────────────────────────┐
+          │  AWS Secrets Manager             │
+          │  JWT_SECRET, DB_PASSWORD         │
+          └──────────────────────────────────┘
 ```
 
 ### CI/CD Pipeline
 
-```mermaid
-flowchart TD
-    Push([Push to main]) --> Check{Changed files?}
-    Check -->|frontend/**| FE[Deploy Frontend workflow]
-    Check -->|backend/**| BE[Deploy Backend workflow]
-
-    FE --> F1[npm ci + vite build]
-    F1 --> F2[aws s3 sync --delete]
-    F2 --> F3[CloudFront invalidation /*]
-
-    BE --> B1[docker build ./backend]
-    B1 --> B2[Push to ECR :sha + :latest]
-    B2 --> B3[ecs update-service\n--force-new-deployment]
+```
+Push to main
+     │
+     ├── frontend/** changed? ──► Deploy Frontend workflow
+     │                               │
+     │                               ├── npm ci + vite build
+     │                               ├── aws s3 sync --delete
+     │                               └── CloudFront invalidation /*
+     │
+     └── backend/** changed?  ──► Deploy Backend workflow
+                                     │
+                                     ├── docker build ./backend
+                                     ├── push to ECR (:sha + :latest)
+                                     └── ecs update-service --force-new-deployment
 ```
 
 Authentication uses GitHub OIDC (no long-lived AWS keys stored in secrets).
