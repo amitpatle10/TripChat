@@ -110,8 +110,10 @@ services:
       # Kafka — connects via Docker internal listener
       KAFKA_SERVERS: kafka:9092
 
-      # JWT — MUST be set in .env for production
-      JWT_SECRET: ${JWT_SECRET:-404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970}
+      # JWT — MUST be set in .env (local dev) or AWS Secrets Manager (prod).
+      # Generate with: openssl rand -base64 32
+      # App will refuse to start if this is blank or the known compromised default.
+      JWT_SECRET: ${JWT_SECRET:-}
 
       # Spring profile (optional: add application-docker.yml for docker-specific overrides)
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-default}

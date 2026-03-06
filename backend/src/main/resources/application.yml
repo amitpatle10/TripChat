@@ -86,7 +86,10 @@ server:
 # expiration: 86400000ms = 24 hours. Tradeoff: longer = fewer logins,
 # but a stolen token is valid longer. Refresh token strategy can mitigate this.
 jwt:
-  secret: ${JWT_SECRET:404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970}
+  # No default — StartupSecurityValidator will catch a missing/blank value at boot
+  # and log a clear FATAL message before refusing to start.
+  # Generate a secret with: openssl rand -base64 32
+  secret: ${JWT_SECRET:}
   expiration: 86400000
 
 # ── ACTUATOR ──────────────────────────────────────────────────────────────────
