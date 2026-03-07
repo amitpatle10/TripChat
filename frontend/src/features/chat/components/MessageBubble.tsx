@@ -90,14 +90,24 @@ export default function MessageBubble({ message, isOwn, onDelete }: MessageBubbl
               ? 'bg-indigo-600 text-white rounded-br-sm'
               : 'bg-gray-800 text-gray-100 rounded-bl-sm'
             }
-            ${isOptimistic ? 'opacity-60' : 'opacity-100'}
-            transition-opacity duration-150
           `}
         >
           {message.content}
         </div>
 
-        <span className="text-xs text-gray-500 mt-0.5 px-1 whitespace-nowrap">{time}</span>
+        {/* Timestamp row — own messages get a delivery dot on the left */}
+        <div className="flex items-center gap-1.5 mt-0.5 px-1">
+          {isOwn && (
+            <span
+              className={`
+                w-2 h-2 rounded-full flex-shrink-0 transition-colors duration-500
+                ${isOptimistic ? 'bg-gray-500' : 'bg-green-500'}
+              `}
+              aria-label={isOptimistic ? 'Sending' : 'Delivered'}
+            />
+          )}
+          <span className="text-xs text-gray-500 whitespace-nowrap">{time}</span>
+        </div>
 
       </div>
     </div>
