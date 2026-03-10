@@ -38,6 +38,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ---
 
+## Git Workflow
+
+- **Always branch from `main`.** Every bug fix and feature branch must be created from the latest `main` — never from another feature branch.
+  ```
+  git checkout main && git pull
+  git checkout -b fix/your-bug   # or feat/your-feature
+  ```
+
+---
+
 ## Approach
 
 At each step:
