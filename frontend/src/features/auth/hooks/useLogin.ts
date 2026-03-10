@@ -16,7 +16,7 @@ export function useLogin() {
     onSuccess: (data) => {
       setAuth(data.user, data.token)   // 1. token in Zustand — ProtectedRoute unblocks
       connectStomp(data.token)         // 2. WebSocket session opens with fresh JWT
-      navigate('/', { replace: true }) // 3. redirect — replace so back button skips login
+      navigate('/groups', { replace: true }) // 3. redirect — replace so back button skips login
     },
   })
 }

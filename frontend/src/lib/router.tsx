@@ -29,6 +29,10 @@ function ProtectedRoute() {
 }
 
 export const router = createBrowserRouter([
+  // Root and unknown paths always land on login — no ProtectedRoute involved.
+  { path: '/',  element: <Navigate to="/login" replace /> },
+  { path: '*',  element: <Navigate to="/login" replace /> },
+
   { path: '/login',    element: <LoginPage />,    errorElement: <ErrorFallback /> },
   { path: '/register', element: <RegisterPage />, errorElement: <ErrorFallback /> },
   {
@@ -37,7 +41,7 @@ export const router = createBrowserRouter([
     element: <ProtectedRoute />,
     errorElement: <ErrorFallback />,
     children: [
-      { path: '/',                   element: <GroupListPage /> },
+      { path: '/groups',             element: <GroupListPage /> },
       { path: '/groups/:groupId',    element: <ChatPage /> },
     ],
   },
